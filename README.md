@@ -1,6 +1,7 @@
 # lib-esub-mailchimp
 
-Adalah library untuk me-menej data email subscriber di mailchimp.com
+Adalah library untuk me-menej data email subscriber di mailchimp.com, secara
+umum, module ini harus bekerja di bawah module [lib-esub](https://github.com/getmim/lib-esub).
 
 ## Instalasi
 
@@ -36,15 +37,20 @@ pada seksi `List ID`.
 
 ## Penggunaan
 
+Jika menggunakan module `lib-esub`, maka silahkan mengacu pada dokumentasi
+module tersebut untuk cara penggunaan.
+
 Module ini membawa satu class public dengan nama `LibEsubMailchimp\Library\Mailchimp`
 yang bisa digunakan untuk memenej email subscriber:
 
 ```php
 use LibEsubMailchimp\Library\Mailchimp;
 
-Mailchimp::get($rpp, $page); // get all email subscriber
-Mailchimp::addMember($email, $fname, $lname);
-Mailchimp::removeMember($email);
+$mc = new Mailchimp;
+
+$mc->get($rpp, $page); // get all email subscriber
+$mc->addMember($email, $fname, $lname);
+$mc->removeMember($email);
 ```
 
 Library ini memiliki beberapa method lain, yaitu:
@@ -55,6 +61,7 @@ Library ini memiliki beberapa method lain, yaitu:
 ### addMember(string $email, string $fname=null, string $lname=null): ?object
 ### getMember(string $email): ?object
 ### removeMember(string $email): bool
+### lastError(): ?string
 
 ## Lisensi
 

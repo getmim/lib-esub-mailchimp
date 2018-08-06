@@ -14,7 +14,11 @@ return [
         'modules/lib-esub-mailchimp' => ['install','update','remove']
     ],
     '__dependencies' => [
-        'required' => [],
+        'required' => [
+            [
+                'lib-esub' => null
+            ]
+        ],
         'optional' => []
     ],
     '__inject' => [
@@ -46,5 +50,8 @@ return [
             ]
         ],
         'files' => []
+    ],
+    'libEsub' => [
+        'handler' => 'LibEsubMailchimp\\Library\\Mailchimp'
     ]
 ];

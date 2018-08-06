@@ -9,30 +9,60 @@ namespace LibEsubMailchimp\Library;
 
 use \DrewM\MailChimp\MailChimp as DMailChimp;
 
-class Mailchimp
+class Mailchimp implements \LibEsub\Iface\Handler
 {
 
-    private static $connector;
+    private $connector;
+    private $list;
+    private $error;
 
-    private static $list;
-
-    private static function prepareConnector(): void{
-        if(self::$connector)
-            return;
-
+    public function __construct(){
         $config = \Mim::$app->config->libEsubMailchimp;
-        $key = $config->apikey;
-        $list = $config->list;
+        $key    = $config->apikey;
+        $list   = $config->list;
 
-        self::$connector = new DMailChimp($key);
-        self::$list = $list;
+        $this->connector = new DMailChimp($key);
+        $this->list = $list;
     }
 
-    static function getLists(): array {
-        self::prepareConnector();
+    private function buildUser($user): object{
+        $fullname = trim($user['merge_fields']['FNAME'] . ' ' . $user['merge_fields']['LNAME']);
 
-        $lists = self::$connector->get('lists');
+        return (object)[
+            'id'    => $user['id'],
+            'email' => $user['email_address'],
+            'name'  => (object)[
+                'full'  => $fullname,
+                'first' => $user['merge_fields']['FNAME'],
+                'last'  => $user['merge_fields']['LNAME']
+            ],
+            'created' => date('Y-m-d H:i:s', strtotime($user['timestamp_opt']))
+        ];
+    }
+
+    private function validateResponse($res): bool{
+        if(!$res){
+            $this->error = 'Unable to connect to mailchimp api';
+            return false;
+        }
+
+        if(
+            isset($res['type']) &&
+            isset($res['status']) &&
+            isset($res['detail'])
+        ){
+            $this->error = 'Mailchimp: ' . $res['detail'];
+            return false;
+        }
+
+        return true;
+    }
+
+    function getLists(): array {
+        $lists = $this->connector->get('lists');
         $result = [];
+        if(!$this->validateResponse($lists))
+            return $result;
         foreach($lists['lists'] as $list){
             $result[] = (object)[
                 'id' => $list['id'],
@@ -44,44 +74,38 @@ class Mailchimp
         return $result;
     }
 
-    static function setList(string $list): void {
-        self::$list = $list;
-        self::prepareConnector();
+    function setList(string $list): void {
+        $this->list = $list;
     }
 
-    static function get(int $rpp=12, int $page=1): array {
-        self::prepareConnector();
-        $uri = '/lists/' . self::$list . '/members';
+    function get(int $rpp=12, int $page=1): object {
+        $result = (object)[
+            'total' => 0,
+            'emails' => []
+        ];
+
+        $uri = '/lists/' . $this->list . '/members';
 
         $offset = $rpp * ($page-1);
-        $res = self::$connector->get($uri, [
+        $res = $this->connector->get($uri, [
             'count' => $rpp,
             'offset' => $offset,
             'status' => 'subscribed'
         ]);
 
-        if(!$res || !isset($res['members']))
-            return [];
+        if(!$this->validateResponse($res))
+            return $result;
+        $result->total = $res['total_items'];
 
-        $result = [];
-        foreach($res['members'] as $mem){
-            $result[] = (object)[
-                'id'    => $mem['id'],
-                'email' => $mem['email_address'],
-                'fname' => $mem['merge_fields']['FNAME'],
-                'lname' => $mem['merge_fields']['LNAME'],
-                'created' => date('Y-m-d H:i:s', strtotime($mem['timestamp_opt']))
-            ];
-        }
+        foreach($res['members'] as $mem)
+            $result->emails[] = $this->buildUser($mem);
 
         return $result;
     }
 
-    static function addMember(string $email, string $fname=null, string $lname=null): ?object {
-        self::prepareConnector();
-
-        $uri = '/lists/' . self::$list . '/members';
-        $res = self::$connector->post($uri, [
+    function addMember(string $email, string $fname=null, string $lname=null): ?object {
+        $uri = '/lists/' . $this->list . '/members';
+        $res = $this->connector->post($uri, [
             'email_address' => $email,
             'status' => 'subscribed',
             'merge_fields' => [
@@ -90,45 +114,35 @@ class Mailchimp
             ]
         ]);
 
-        if(!$res || $res['status'] === 400)
+        if(!$this->validateResponse($res))
             return null;
 
-        return (object)[
-            'id'    => $res['id'],
-            'email' => $res['email_address'],
-            'fname' => $res['merge_fields']['FNAME'],
-            'lname' => $res['merge_fields']['LNAME'],
-            'created' => date('Y-m-d H:i:s', strtotime($res['timestamp_opt']))
-        ];
+        return $this->buildUser($res);
     }
 
-    static function getMember(string $email): ?object {
-        self::prepareConnector();
-        $hash = self::$connector->subscriberHash($email);
+    function getMember(string $email): ?object {
+        $hash = $this->connector->subscriberHash($email);
 
-        $uri = '/lists/' . self::$list . '/members/' . $hash;
-        $res = self::$connector->get($uri);
+        $uri = '/lists/' . $this->list . '/members/' . $hash;
+        $res = $this->connector->get($uri);
 
-        if(!$res || $res['status'] == 404)
+        if(!$this->validateResponse($res))
             return null;
-
-        return (object)[
-            'id'    => $res['id'],
-            'email' => $res['email_address'],
-            'fname' => $res['merge_fields']['FNAME'],
-            'lname' => $res['merge_fields']['LNAME'],
-            'created' => date('Y-m-d H:i:s', strtotime($res['timestamp_opt']))
-        ];
+        return $this->buildUser($res);
     }
 
-    static function removeMember(string $email): bool {
-        self::prepareConnector();
+    function lastError(): ?string{
+        return $this->error;
+    }
 
-        $hash = self::$connector->subscriberHash($email);
+    function removeMember(string $email): bool {
+        $hash = $this->connector->subscriberHash($email);
 
-        $uri = '/lists/' . self::$list . '/members/' . $hash;
-        $res = self::$connector->delete($uri);
+        $uri = '/lists/' . $this->list . '/members/' . $hash;
+        $res = $this->connector->delete($uri);
 
+        if(!$this->validateResponse($res))
+            return false;
         if(is_bool($res))
             return $res;
         return false;
